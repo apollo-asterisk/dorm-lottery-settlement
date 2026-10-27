@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>寮くじ清算</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 0 auto; padding: 16px; color: #222; background: #fff; }
+    textarea { width: 100%; height: 180px; font-size: 22px; line-height: 1.6; letter-spacing: 0.08em; word-spacing: 0.4em;
+               font-family: Consolas, "Courier New", monospace; box-sizing: border-box; padding: 8px; }
+    .count { color: #555; margin: 4px 0; }
+    .buttons { display: flex; gap: 8px; margin-top: 8px; }
+    button { font-size: 16px; padding: 8px 20px; }
+    #reset { background: #fff; border: 1px solid #d9534f; color: #d9534f; }
+    table { border-collapse: collapse; width: 100%; margin: 8px 0 24px; }
+    th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; }
+    th { background: #f3f3f3; }
+    td.num { text-align: right; }
+    td.lot { font-family: Consolas, "Courier New", monospace; font-size: 20px; font-weight: bold; letter-spacing: 0.1em; white-space: nowrap; }
+    .error { background: #fde2e2; border: 1px solid #d9534f; padding: 8px 12px; margin: 8px 0; }
+    .g1 { color: #b8002e; font-weight: bold; }
+    .g2 { color: #c25e00; font-weight: bold; }
+    .g3 { color: #0057a8; }
+  </style>
+</head>
+<body>
+  <h1>寮くじ清算</h1>
+  <p>くじ番号を続けて入力してください。4桁ごとに自動で区切られます。</p>
+  <textarea id="input" placeholder="1791 0122 1230" inputmode="numeric" autofocus></textarea>
+  <div class="count" id="count">入力済み：0件</div>
+  <div class="buttons">
+    <button id="run">清算する</button>
+    <button id="reset">RESET</button>
+  </div>
+  <div id="output"></div>
+
+  <script src="src/prizes.js"></script>
+  <script src="src/lottery.js"></script>
+  <script>
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const gradeClass = (g) => ({ '1等': 'g1', '2等': 'g2', '3等': 'g3' }[g] || '');
+    const input = document.getElementById('input');
+    const output = document.getElementById('output');
+    const count = document.getElementById('count');
+
+    // 入力のたびに4桁ごとに区切り直す（カーソル位置は「その前にある数字の数」で復元する）
+    function reformat() {
+      const before = Lottery.parseInput(input.value.slice(0, input.selectionStart)).join('').length;
+      const formatted = Lottery.formatInput(input.value);
+      const complete = Lottery.parseInput(input.value).filter((n) => n.length === 4).length;
+      count.textContent = `入力済み：${complete}件`;
+      if (formatted === input.value) return;
+      input.value = formatted;
+      let pos = 0;
+      for (let digits = 0; pos < formatted.length && digits < before; pos++) {
+        if (formatted[pos] !== ' ') digits++;
+      }
+      input.setSelectionRange(pos, pos);
+    }
+    input.addEventListener('input', (e) => { if (!e.isComposing) reformat(); });
+    input.addEventListener('compositionend', reformat);
+
+    document.getElementById('reset').addEventListener('click', () => {
+      input.value = '';
+      output.innerHTML = '';
+      count.textContent = '入力済み：0件';
+      input.focus();
+    });
+
+    document.getElementById('run').addEventListener('click', () => {
+      const { results, errors, gradeCounts, prizeSummary } = Lottery.settle(Lottery.parseInput(input.value));
+      let html = '';
+
+      if (errors.length) {
+        html += `<div class="error">4桁に満たない番号を除外しました：${errors.map(esc).join('、')}</div>`;
+      }
+
+      html += '<h2>景品別集計</h2><table><tr><th>景品名</th><th>等級</th><th>必要個数</th></tr>';
+      for (const p of prizeSummary) {
+        html += `<tr><td>${esc(p.prize)}</td><td class="${gradeClass(p.grade)}">${p.grade}</td><td class="num">${p.count}</td></tr>`;
+      }
+      html += '</table>';
+
+      html += `<h2>番号別の結果（${results.length}件）</h2><table><tr><th>番号</th><th>等級</th><th>景品</th></tr>`;
+      for (const { number, wins } of results) {
+        if (!wins.length) {
+          html += `<tr><td class="lot">${esc(number)}</td><td>—</td><td>当選なし</td></tr>`;
+          continue;
+        }
+        html += `<tr><td class="lot">${esc(number)}</td>
+          <td>${wins.map((w) => `<span class="${gradeClass(w.grade)}">${w.grade}</span>`).join(' ＋ ')}</td>
+          <td>${wins.map((w) => esc(Lottery.prizeLabel(w))).join(' ＋ ')}</td></tr>`;
+      }
+      html += '</table>';
+
+      html += '<h2>等級別の当選件数</h2><table><tr><th>等級</th><th>件数</th></tr>';
+      for (const g of Lottery.GRADES) html += `<tr><td class="${gradeClass(g)}">${g}</td><td class="num">${gradeCounts[g]}</td></tr>`;
+      html += '</table>';
+
+      output.innerHTML = html;
+    });
+  </script>
+</body>
+</html>
